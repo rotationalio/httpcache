@@ -17,8 +17,8 @@ type Cache interface {
 	// Put stores the []byte representation of a response in the cache with a key.
 	Put(string, []byte)
 
-	// Rm removes the cached response associated with the key.
-	Rm(string)
+	// Del removes the cached response associated with the key.
+	Del(string)
 }
 
 // CachedResponse returns the cached http.Response for the request if present and nil
@@ -54,7 +54,7 @@ func cacheKey(req *http.Request) string {
 	return req.Method + " " + req.URL.String()
 }
 
-// cacheKeyWithHeaders returns the cach key for a request and includes the specified
+// cacheKeyWithHeaders returns the cache key for a request and includes the specified
 // headers in their canonical form. This allows you to differentiate cache entries
 // based on header values such as Authorization or custom headers.
 func cacheKeyWithHeaders(req *http.Request, headers []string) string {

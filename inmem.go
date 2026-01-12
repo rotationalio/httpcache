@@ -10,6 +10,8 @@ type InMemoryCache struct {
 	store map[string][]byte
 }
 
+var _ Cache = (*InMemoryCache)(nil)
+
 // Get the []byte representation of the response and true if present.
 func (c *InMemoryCache) Get(key string) (val []byte, ok bool) {
 	c.RLock()
@@ -28,8 +30,8 @@ func (c *InMemoryCache) Put(key string, val []byte) {
 	c.Unlock()
 }
 
-// Rm removes the cached response associated with the key.
-func (c *InMemoryCache) Rm(key string) {
+// Del removes the cached response associated with the key.
+func (c *InMemoryCache) Del(key string) {
 	c.Lock()
 	delete(c.store, key)
 	c.Unlock()
