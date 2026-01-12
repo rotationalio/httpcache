@@ -71,7 +71,7 @@ type Config struct {
 	// already exist, the cache continue with setting that value for the given key.
 	//
 	// In this function, you can check whether the new value is valid. For example, if
-	// your value has timestamp assosicated with it, you could check whether the new
+	// your value has timestamp associated with it, you could check whether the new
 	// value has the latest timestamp, preventing you from setting an older value.
 	ShouldUpdate func(cur, prev []byte) bool
 
