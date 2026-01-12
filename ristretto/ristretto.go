@@ -55,7 +55,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 
 // Put attempts to add the key-value item to the cache. If the cache has reached the
 // maximum size, it may evict other items to make room for the new item. Put does not
-// set an explicity cost for the item; instead, it relies on the Cost function defined
+// set an explicitly cost for the item; instead, it relies on the Cost function defined
 // in the Config to determine the cost of the item. If using a dynamic Cost function,
 // it is possible that the item may be dropped and not cached rather than evicting other
 // higher value items.
