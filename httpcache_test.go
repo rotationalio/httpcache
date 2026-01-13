@@ -62,3 +62,103 @@ func TestNormalize(t *testing.T) {
 		require.Equal(t, test.expected, result)
 	}
 }
+
+func TestAllHeaderCSVs(t *testing.T) {
+	tests := []struct {
+		name     string
+		headers  http.Header
+		header   string
+		expected []string
+	}{
+		{
+			name: "Single header with single value",
+			headers: http.Header{
+				"Accept": []string{"text/html"},
+			},
+			header:   "Accept",
+			expected: []string{"text/html"},
+		},
+		{
+			name: "Single header with single CSV",
+			headers: http.Header{
+				"Accept": []string{"text/html, application/json"},
+			},
+			header:   "Accept",
+			expected: []string{"text/html", "application/json"},
+		},
+		{
+			name: "Multiple headers with single values",
+			headers: http.Header{
+				"Accept": []string{"text/html", "application/xml"},
+			},
+			header:   "Accept",
+			expected: []string{"text/html", "application/xml"},
+		},
+		{
+			name: "Multiple Headers with multiple CSVs",
+			headers: http.Header{
+				"Accept": []string{"text/html, application/json", "application/xml, text/plain, application/yaml"},
+			},
+			header:   "Accept",
+			expected: []string{"text/html", "application/json", "application/xml", "text/plain", "application/yaml"},
+		},
+		{
+			name: "Header not present",
+			headers: http.Header{
+				"Accept-Language": []string{"en,fr,de"},
+			},
+			header:   "Accept",
+			expected: nil,
+		},
+		{
+			name: "Canonicalize header name",
+			headers: http.Header{
+				"Accept-Language": []string{"en,fr,de"},
+			},
+			header:   "accept-language",
+			expected: []string{"en", "fr", "de"},
+		},
+		{
+			name: "Trim spaces in CSV values",
+			headers: http.Header{
+				"Accept-Language": []string{"en,fr,      de    , es "},
+			},
+			header:   "accept-language",
+			expected: []string{"en", "fr", "de", "es"},
+		},
+		{
+			name: "Case Sensitive CSV values",
+			headers: http.Header{
+				"Accept-Language": []string{"en-US,fr-AG,es-MX"},
+			},
+			header:   "accept-language",
+			expected: []string{"en-US", "fr-AG", "es-MX"},
+		},
+	}
+
+	for _, test := range tests {
+		result := httpcache.AllHeaderCSVs(test.headers, test.header)
+		require.Equal(t, test.expected, result, "Failed test: %s", test.name)
+	}
+}
+
+func TestIsUnsafeMethod(t *testing.T) {
+	tests := []struct {
+		method  string
+		require require.BoolAssertionFunc
+	}{
+		{"GET", require.False},
+		{"HEAD", require.False},
+		{"OPTIONS", require.False},
+		{"POST", require.True},
+		{"PUT", require.True},
+		{"DELETE", require.True},
+		{"PATCH", require.True},
+		{"TRACE", require.False},
+	}
+
+	for _, test := range tests {
+		result := httpcache.IsUnsafeMethod(test.method)
+		test.require(t, result, "Failed for method: %q", test.method)
+	}
+}
