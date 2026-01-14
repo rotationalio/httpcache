@@ -6,6 +6,7 @@ require (
 	github.com/dgraph-io/ristretto/v2 v2.3.0
 	github.com/stretchr/testify v1.11.1
 	github.com/syndtr/goleveldb v1.0.0
+	go.rtnl.ai/x v1.9.0
 )
 
 require (

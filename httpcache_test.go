@@ -134,6 +134,22 @@ func TestAllHeaderCSVs(t *testing.T) {
 			header:   "accept-language",
 			expected: []string{"en-US", "fr-AG", "es-MX"},
 		},
+		{
+			name: "Filter empty values",
+			headers: http.Header{
+				"Accept-Language": []string{"en,,fr, , es, "},
+			},
+			header:   "accept-language",
+			expected: []string{"en", "fr", "es"},
+		},
+		{
+			name: "Trailing comma",
+			headers: http.Header{
+				"Accept-Language": []string{"en,"},
+			},
+			header:   "accept-language",
+			expected: []string{"en"},
+		},
 	}
 
 	for _, test := range tests {
