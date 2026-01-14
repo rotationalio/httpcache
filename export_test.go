@@ -11,4 +11,6 @@ var (
 	CachedResponseWithKey = cachedResponse
 	AllHeaderCSVs         = allHeaderCSVs
 	IsUnsafeMethod        = isUnsafeMethod
+	IsSameOrigin          = isSameOrigin
+	GetOrigin             = getOrigin
 )

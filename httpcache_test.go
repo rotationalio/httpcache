@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -176,5 +177,51 @@ func TestIsUnsafeMethod(t *testing.T) {
 	for _, test := range tests {
 		result := httpcache.IsUnsafeMethod(test.method)
 		test.require(t, result, "Failed for method: %q", test.method)
+	}
+}
+
+func TestIsSameOrigin(t *testing.T) {
+	tests := []struct {
+		url1    string
+		url2    string
+		require require.BoolAssertionFunc
+	}{
+		{"http://example.com/resource", "http://example.com/other", require.True},
+		{"https://example.com/resource", "https://example.com/other", require.True},
+		{"http://example.com/resource", "https://example.com/other", require.False},
+		{"http://example.com/resource", "http://other.com/resource", require.False},
+		{"http://example.com/resource", "http://example.com:8080/resource", require.False},
+		{"http://sub.example.com/resource", "http://example.com/resource", require.False},
+	}
+
+	for _, test := range tests {
+		u1, err := url.Parse(test.url1)
+		require.NoError(t, err, "Failed to parse url1: %q", test.url1)
+
+		u2, err := url.Parse(test.url2)
+		require.NoError(t, err, "Failed to parse url2: %q", test.url2)
+
+		result := httpcache.IsSameOrigin(u1, u2)
+		test.require(t, result, "Failed for URLs: %q and %q", test.url1, test.url2)
+	}
+}
+
+func TestGetOrigin(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"http://example.com/resource", "http://example.com"},
+		{"https://example.com:8080/resource", "https://example.com:8080"},
+		{"ftp://ftp.example.com/files", "ftp://ftp.example.com"},
+		{"http://localhost:3000/path", "http://localhost:3000"},
+	}
+
+	for _, test := range tests {
+		u, err := url.Parse(test.input)
+		require.NoError(t, err, "Failed to parse input URL: %q", test.input)
+
+		origin := httpcache.GetOrigin(u)
+		require.Equal(t, test.expected, origin, "Failed for input URL: %q", test.input)
 	}
 }

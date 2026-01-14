@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"strings"
 	"time"
 
@@ -29,10 +30,12 @@ var understoodStatusCodes = map[int]bool{
 }
 
 const (
-	Vary          = "Vary"
-	Range         = "Range"
-	Authorization = "Authorization"
-	XVariedPrefix = "X-Varied-"
+	Vary            = "Vary"
+	Range           = "Range"
+	Authorization   = "Authorization"
+	Location        = "Location"
+	ContentLocation = "Content-Location"
+	XVariedPrefix   = "X-Varied-"
 )
 
 //===========================================================================
@@ -184,7 +187,103 @@ func (t *Transport) processUncachedRequest(transport http.RoundTripper, req *htt
 	return transport.RoundTrip(req)
 }
 
-func (t *Transport) invalidateCache(req *http.Request, rep *http.Response) {}
+//===========================================================================
+// Cache Invalidation
+//===========================================================================
+
+// Invalidates cache entries per RFC 9111 Section 4.4
+// When receiving a non-error response to an unsafe method, invalidate:
+// 1. The effective Request-URI
+// 2. URIs in Location and Content-Location response headers (if present and same-origin)
+//
+// RFC 9111 restricts invalidation to same-origin URIs for security.
+func (t *Transport) invalidateCache(req *http.Request, rep *http.Response) {
+	// RFC 9111 Section 4.4: Only invalidate on non-error responses
+	if rep.StatusCode >= 400 {
+		GetLogger().Debug(
+			"skipping cache invalidation for error response",
+			slog.String("url", req.URL.String()),
+			slog.Int("status", rep.StatusCode),
+		)
+		return
+	}
+
+	// Always invalidate the Request-URI
+	t.invalidateURI(req.URL, GetLogger().With(slog.String("source", "request-uri")))
+
+	// Invalidate Location header URI (RFC 9111 Section 4.4)
+	if location := rep.Header.Get(Location); location != "" {
+		if err := t.invalidateHeaderURI(req.URL, location, Location); err != nil {
+			GetLogger().Debug(
+				"could not invalidate Location header URI",
+				slog.String("location", location),
+				slog.Any("error", err),
+			)
+		}
+	}
+
+	// Invalidate Content-Location header URI (RFC 9111 Section 4.4)
+	if location := rep.Header.Get(ContentLocation); location != "" {
+		if err := t.invalidateHeaderURI(req.URL, location, ContentLocation); err != nil {
+			GetLogger().Debug(
+				"could not invalidate Content-Location header URI",
+				slog.String("content-location", location),
+				slog.Any("error", err),
+			)
+		}
+	}
+}
+
+func (t *Transport) invalidateURI(url *url.URL, logger *slog.Logger) {
+	if logger == nil {
+		logger = GetLogger()
+	}
+
+	// Invalidate GET request for this URL
+	getKey := cacheKey(&http.Request{
+		Method: http.MethodGet,
+		URL:    url,
+	})
+	t.Cache.Del(getKey)
+	logger.Debug("invalidated cache entry", slog.String("key", getKey), slog.String("url", url.String()))
+
+	// Also invalidate HEAD request if different key
+	headKey := cacheKey(&http.Request{
+		Method: http.MethodHead,
+		URL:    url,
+	})
+	if headKey != getKey {
+		t.Cache.Del(headKey)
+		logger.Debug("invalidated cache entry", slog.String("key", headKey), slog.String("url", url.String()))
+	}
+}
+
+func (t *Transport) invalidateHeaderURI(requestURL *url.URL, value string, header string) (err error) {
+	// Parse the header value as a URI (may be relative or absolute)
+	var targetURL *url.URL
+	if targetURL, err = requestURL.Parse(value); err != nil {
+		return err
+	}
+
+	// RFC 9111 Section 4.4: Only invalidate same-origin URIs
+	// Origin = scheme + host (host includes port if present)
+	if !isSameOrigin(requestURL, targetURL) {
+		GetLogger().Debug(
+			"skipping cache invalidation for cross-origin URI",
+			slog.String("header", header),
+			slog.String("request-origin", getOrigin(requestURL)),
+			slog.String("target-origin", getOrigin(targetURL)),
+		)
+		return nil
+	}
+
+	t.invalidateURI(targetURL, GetLogger().With(slog.String("source", header)))
+	return nil
+}
+
+//===========================================================================
+// Response Caching
+//===========================================================================
 
 func (t *Transport) cacheResponse(req *http.Request, rep *http.Response, cacheKey string, cacheable bool) {
 	var (
@@ -414,4 +513,16 @@ func storeVaryHeaders(rep *http.Response, req *http.Request) {
 		cacheHeader := XVariedPrefix + varyKey
 		rep.Header.Set(cacheHeader, value)
 	}
+}
+
+// Checks if two URLS have the same origin. Per RFC 9111, origin is defined as
+// scheme + host (host includes port if present).
+func isSameOrigin(u1, u2 *url.URL) bool {
+	return u1.Scheme == u2.Scheme && u1.Host == u2.Host
+}
+
+// Returns the origin string for a URL (scheme://host).
+// Only used for debugging and logging.
+func getOrigin(u *url.URL) string {
+	return u.Scheme + "://" + u.Host
 }
