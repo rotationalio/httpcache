@@ -58,8 +58,11 @@ func cacheKey(req *http.Request) string {
 // headers in their canonical form. This allows you to differentiate cache entries
 // based on header values such as Authorization or custom headers.
 func cacheKeyWithHeaders(req *http.Request, headers []string) string {
+	// Create base cachekey
 	key := cacheKey(req)
 
+	// Important - return the base key if no headers specified so that we can use this
+	// method without checking the length of headers separately.
 	if len(headers) == 0 {
 		return key
 	}

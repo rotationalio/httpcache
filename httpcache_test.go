@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,5 +61,167 @@ func TestNormalize(t *testing.T) {
 	for _, test := range tests {
 		result := httpcache.Normalize(test.input)
 		require.Equal(t, test.expected, result)
+	}
+}
+
+func TestAllHeaderCSVs(t *testing.T) {
+	tests := []struct {
+		name     string
+		headers  http.Header
+		header   string
+		expected []string
+	}{
+		{
+			name: "Single header with single value",
+			headers: http.Header{
+				"Accept": []string{"text/html"},
+			},
+			header:   "Accept",
+			expected: []string{"text/html"},
+		},
+		{
+			name: "Single header with single CSV",
+			headers: http.Header{
+				"Accept": []string{"text/html, application/json"},
+			},
+			header:   "Accept",
+			expected: []string{"text/html", "application/json"},
+		},
+		{
+			name: "Multiple headers with single values",
+			headers: http.Header{
+				"Accept": []string{"text/html", "application/xml"},
+			},
+			header:   "Accept",
+			expected: []string{"text/html", "application/xml"},
+		},
+		{
+			name: "Multiple Headers with multiple CSVs",
+			headers: http.Header{
+				"Accept": []string{"text/html, application/json", "application/xml, text/plain, application/yaml"},
+			},
+			header:   "Accept",
+			expected: []string{"text/html", "application/json", "application/xml", "text/plain", "application/yaml"},
+		},
+		{
+			name: "Header not present",
+			headers: http.Header{
+				"Accept-Language": []string{"en,fr,de"},
+			},
+			header:   "Accept",
+			expected: nil,
+		},
+		{
+			name: "Canonicalize header name",
+			headers: http.Header{
+				"Accept-Language": []string{"en,fr,de"},
+			},
+			header:   "accept-language",
+			expected: []string{"en", "fr", "de"},
+		},
+		{
+			name: "Trim spaces in CSV values",
+			headers: http.Header{
+				"Accept-Language": []string{"en,fr,      de    , es "},
+			},
+			header:   "accept-language",
+			expected: []string{"en", "fr", "de", "es"},
+		},
+		{
+			name: "Case Sensitive CSV values",
+			headers: http.Header{
+				"Accept-Language": []string{"en-US,fr-AG,es-MX"},
+			},
+			header:   "accept-language",
+			expected: []string{"en-US", "fr-AG", "es-MX"},
+		},
+		{
+			name: "Filter empty values",
+			headers: http.Header{
+				"Accept-Language": []string{"en,,fr, , es, "},
+			},
+			header:   "accept-language",
+			expected: []string{"en", "fr", "es"},
+		},
+		{
+			name: "Trailing comma",
+			headers: http.Header{
+				"Accept-Language": []string{"en,"},
+			},
+			header:   "accept-language",
+			expected: []string{"en"},
+		},
+	}
+
+	for _, test := range tests {
+		result := httpcache.AllHeaderCSVs(test.headers, test.header)
+		require.Equal(t, test.expected, result, "Failed test: %s", test.name)
+	}
+}
+
+func TestIsUnsafeMethod(t *testing.T) {
+	tests := []struct {
+		method  string
+		require require.BoolAssertionFunc
+	}{
+		{"GET", require.False},
+		{"HEAD", require.False},
+		{"OPTIONS", require.False},
+		{"POST", require.True},
+		{"PUT", require.True},
+		{"DELETE", require.True},
+		{"PATCH", require.True},
+		{"TRACE", require.False},
+	}
+
+	for _, test := range tests {
+		result := httpcache.IsUnsafeMethod(test.method)
+		test.require(t, result, "Failed for method: %q", test.method)
+	}
+}
+
+func TestIsSameOrigin(t *testing.T) {
+	tests := []struct {
+		url1    string
+		url2    string
+		require require.BoolAssertionFunc
+	}{
+		{"http://example.com/resource", "http://example.com/other", require.True},
+		{"https://example.com/resource", "https://example.com/other", require.True},
+		{"http://example.com/resource", "https://example.com/other", require.False},
+		{"http://example.com/resource", "http://other.com/resource", require.False},
+		{"http://example.com/resource", "http://example.com:8080/resource", require.False},
+		{"http://sub.example.com/resource", "http://example.com/resource", require.False},
+	}
+
+	for _, test := range tests {
+		u1, err := url.Parse(test.url1)
+		require.NoError(t, err, "Failed to parse url1: %q", test.url1)
+
+		u2, err := url.Parse(test.url2)
+		require.NoError(t, err, "Failed to parse url2: %q", test.url2)
+
+		result := httpcache.IsSameOrigin(u1, u2)
+		test.require(t, result, "Failed for URLs: %q and %q", test.url1, test.url2)
+	}
+}
+
+func TestGetOrigin(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"http://example.com/resource", "http://example.com"},
+		{"https://example.com:8080/resource", "https://example.com:8080"},
+		{"ftp://ftp.example.com/files", "ftp://ftp.example.com"},
+		{"http://localhost:3000/path", "http://localhost:3000"},
+	}
+
+	for _, test := range tests {
+		u, err := url.Parse(test.input)
+		require.NoError(t, err, "Failed to parse input URL: %q", test.input)
+
+		origin := httpcache.GetOrigin(u)
+		require.Equal(t, test.expected, origin, "Failed for input URL: %q", test.input)
 	}
 }
